@@ -15,6 +15,7 @@ order by order_counts desc
 nazwê kategorii (Categories.CategoryName), do której nale¿y produkt.
 Wynik posortuj po nazwie produktu (rosn¹co).*/
 
+explain analyze
 select p.[ProductName], c.[CategoryName]
 from [dbo].[Products] p
 join [dbo].[Categories] c
@@ -150,6 +151,7 @@ select ShipCountry from Orders where [ShipRegion] is null
 INTERSECT
 select ShipCountry from Orders where [ShipRegion] is not null
 
+
 /*Korzystaj¹c z odpowiednich tabel wyœwietl identyfikator produktu (Products.ProductID), nazwê
 produktu (Products.ProductName), kraj i miasto dostawcy (Suppliers.Country, Suppliers.City – nazwij
 je odpowiednio: SupplierCountry oraz SupplierCity) oraz kraj i miasto dostawy danego produktu
@@ -181,6 +183,122 @@ where s.[Country] = o.[ShipCountry]
 Order by FullMatch desc, p.ProductName 
 
 
+--Korzystaj¹c z tabeli Products zweryfikuj, czy istniej¹ dwa (lub wiêcej) produkty o tej samej nazwie.
+--Zapytanie powinno zwróciæ w kolumnie DuplicatedProductsFlag wartoœæ Yes lub No
+
+select ProductName, count(ProductName) as DuplicatedCount,
+case when count(ProductName)>1 then 'Yes'
+else 'No'
+end DuplicatedProductsFlag
+from Products
+group by ProductName
+--having count(ProductName)
+
+with duplicates
+as
+(select ProductName,
+row_number() over (partition by ProductName order by ProductName asc) as rn
+from Products)
+select ProductName
+from duplicates
+--where rn > 1 
+
+/*
+Zadanie 13.
+Korzystaj¹c z tabel Products oraz Order Details wyœwietl nazwy produktów wraz z informacj¹ na ilu
+zamówieniach pojawi³y siê dane produkty.
+Wynik posortuj tak, aby w pierwszej kolejnoœci pojawi³y siê produkty, które najczêœciej pojawiaj¹ siê
+na zamówieniach*/
+
+select p.ProductName, count(od.ProductID) as Number
+from Products p join [dbo].[Order Details] od
+on p.[ProductID]=od.[ProductID]
+group by p.ProductName
+order by Number desc
+
+/*Korzystaj¹c z tabeli Orders rozbuduj poprzednie zapytanie tak, aby powy¿sz¹ analizê zaprezentowaæ
+w kontekœcie poszczególnych lat (Orders.OrderDate) – kolumnê nazwij OrderYear.
+Tym razem wynik posortuj, tak, aby w pierwszej kolejnoœci wyœwietliæ produkty najczêœciej pojawiaj¹ce
+siê na zamówieniach w kontekœcie danego roku, czyli w pierwszej kolejnoœci interesuje nas rok: 1996,
+póŸniej 1997 itd.*/
+
+select year(o.OrderDate) as OrderYear, p.ProductName, count(*) as Number
+from Products p join [dbo].[Order Details] od
+on p.[ProductID]=od.[ProductID]
+join Orders o
+on od.OrderID = o.OrderID
+group by year(o.OrderDate), p.ProductName
+order by OrderYear, Number desc
+
+/*7
+Zadanie 15. (*)
+Korzystaj¹c z tabeli Suppliers, rozbuduj zapytanie tak, aby dla ka¿dego produktu wyœwietliæ dodatkowo
+nazwê dostawcy danego produktu (Suppliers.CompanyName) – kolumnê nazwij SupplierName.*/
+
+select year(o.OrderDate) as OrderYear, p.ProductName, s.CompanyName as SupplierName, count(*) as Number
+from Products p 
+join [dbo].[Order Details] od on p.[ProductID]=od.[ProductID]
+join Orders o on od.OrderID = o.OrderID
+join Suppliers s on p.SupplierID = s.SupplierID
+group by year(o.OrderDate), p.ProductName, s.CompanyName
+order by OrderYear, Number desc
+
+/*Korzystaj¹c z tabeli Products wyœwietl maksymaln¹ cenê jednostkow¹ dostêpnych produktów
+(UnitPrice).*/
+
+select max(UnitPrice)
+from Products
+
+/*Korzystaj¹c z tabeli Products oraz Categories wyœwietl sumê wartoœci produktów w magazynie
+(UnitPrice * UnitsInStock) z podzia³em na kategorie (w wyniku uwzglêdnij nazwê kategorii oraz
+produkty przypisane do jakiejœ kategorii). Wynik posortuj wg kategorii (rosn¹co)*/
+
+select p.CategoryID, c.CategoryName, sum(p.UnitPrice * p.UnitsInStock) as SumWarehouse
+from Products p 
+join Categories c on p.CategoryID=c.CategoryID
+group by p.CategoryID, c.CategoryName
+order by p.CategoryID 
+
+/*Rozbuduj zapytanie z zadania 2. tak, aby zaprezentowane zosta³y jedynie kategorie, dla których
+wartoœæ produktów przekracza 10000. Wynik posortuj malej¹co wg wartoœci produktów.*/
+
+select p.CategoryID, c.CategoryName, sum(p.UnitPrice * p.UnitsInStock) as SumWarehouse
+from Products p 
+join Categories c on p.CategoryID=c.CategoryID
+group by p.CategoryID, c.CategoryName
+having sum(p.UnitPrice * p.UnitsInStock) > 10000
+order by SumWarehouse desc
+
+/*
+Korzystaj¹c z tabeli Suppliers, Products oraz Order Details wyœwietl informacje na ilu unikalnych
+zamówieniach pojawi³y siê produkty danego dostawcy. Wyniki posortuj alfabetycznie po nazwie
+dostawcy*/
+
+Select s.CompanyName, count(distinct od.OrderID)
+from Suppliers s
+join Products p on p.SupplierID=s.SupplierID
+join [Order Details] od on p.ProductID=od.ProductID
+group by s.CompanyName
+Order by s.CompanyName
+
+/*2
+Korzystaj¹c z tabel Orders, Customers oraz Order Details przedstaw œredni¹, minimaln¹ oraz
+maksymaln¹ wartoœæ zamówienia (zaokr¹glonego do dwóch miejsc po przecinku, bez uwzglêdnienia
+zni¿ki) dla ka¿dego z klientów (Customers.CustomerID). Wyniki posortuj zgodnie ze œredni¹ wartoœci¹
+zamówienia – malej¹co. Pamiêtaj, aby œredni¹, minimaln¹ oraz maksymaln¹ wartoœæ zamówienia
+wyliczyæ bazuj¹c na jego wartoœci, czyli sumie iloczynów cen jednostkowych oraz wielkoœci zamówienia.*/
 
 
+with cte_suma_zamówieñ
+as
+(select c.CustomerID, round(sum(od.UnitPrice*od.Quantity), 2) as suma
+from [Order Details] od
+join Orders o on o.OrderID=od.OrderID
+join Customers c on c.CustomerID=o.CustomerID
+group by c.CustomerID, o.OrderID)
+select CustomerID, avg(suma) as average,
+min(suma) as minimum,
+max(suma) as maximum
+from cte_suma_zamówieñ
+group by CustomerID
 
